@@ -23,16 +23,17 @@ char lastdir[100];
 char command[BUFSIZ];
 char argv[100][100];
 int  argc;
-
+int BUILTIN_COMMAND = 0;
 //set the prompt
 void set_prompt(char *prompt);
 //analysis the command that user input
 int analysis_command();
+void builtin_command();
 int is_valid_command(char *command);
 int do_command();
 //print help information
 void help();
-
+void clean_argv();
 void init_lastdir();
 void history_setup();
 void history_finish();
@@ -41,6 +42,7 @@ void display_history_list();
 int main(){
 	char prompt[BUFSIZ];
 	char *line;
+	
 	init_lastdir();
 	history_setup();	
 	while(1) {
@@ -52,13 +54,29 @@ int main(){
 
 		strcpy(command, line);
 		//strcat(command, "\n");
-		analysis_command();
-		//todo deal with the buff
-
-	}
-
+		if(!(analysis_command())){
+			//todo deal with the buff
+			if(BUILTIN_COMMAND){
+				builtin_command();		
+			}
+			else{
+			int pid = fork();
+				if(pid == -1){
+					printf("fork failed!\n");		
+				}//if
+				else if(pid == 0){
+					do_command();		
+				}//else if 
+				else{
+					int pidReturn = wait(NULL);
+				}//else
+			}//else
+		}//if analysis_command
+		clean_argv();
+		BUILTIN_COMMAND = 0;
+	}//while
 	history_finish();
-
+	
 	return 0;
 }
 
@@ -115,21 +133,44 @@ int analysis_command(){
 	//to cut the cwd by " "	
 	char delims[] = " ";
 	argc = 1;
-	struct passwd* pwp;
+	
 	strcpy(argv[0],strtok(command,delims));
 	while(p = strtok(NULL,delims)){
 		strcpy(argv[i++],p);
 		argc++;
 	}//while
 	
+	if(!(strcmp(argv[0],"exit"))||!(strcmp(argv[0],"help"))|| !(strcmp(argv[0],"cd"))){
+		BUILTIN_COMMAND = 1;	
+	}
+
+	if(!is_valid_command(argv[0])){
+		printf("%s: command not found\n",argv[0]);
+		return 1;	
+	}
+
+	//test the analysis
+	printf("\n==>the command is:%s with %d parameter(s):\n",argv[0],argc);
+	printf("0(command): %s\n",argv[0]);	
+	int j;	
+	for(j = 1;j < argc;j++){
+		printf("%d: %s\n",j,argv[j]);	
+	}//for
+	printf("BUILTIN_COMMAND = %d\n",BUILTIN_COMMAND);
+	return 0;
+}
+
+void builtin_command(){
+	struct passwd* pwp;
 	//exit when command is exit	
 	if(strcmp(argv[0],"exit") == 0){
+		printf("exit====\n");
 		exit(EXIT_SUCCESS);
 	}
 	else if(strcmp(argv[0],"help") == 0){
 		help();
 	}//else if
-
+	
 	else if(strcmp(argv[0],"cd") == 0){
 		char cd_path[100];
 		if((strlen(argv[1])) == 0 ){
@@ -143,38 +184,13 @@ int analysis_command(){
 			sprintf(cd_path,"/home/%s",pwp->pw_name);
 			strcpy(argv[1],cd_path);			
 		}
-
-		else if( !(strcmp(argv[1],"..")) ){
-			char cwdtmp[100];
-			//the parent dir of cwd
-			char parentdir[100];
-			char *p = cwdtmp;
-			char *q	= parentdir;		
-			getcwd(cwdtmp,sizeof(cwdtmp));
-			char *thisdir = strrchr(cwdtmp,'/');
-			int offset = strlen(cwdtmp) - strlen(thisdir);
-			while(offset--){
-				*(q++) = *(p++);				
-			}
-			*(q++) = '\0';
-			strcpy(argv[1],parentdir);		
-		}//else if	
-
-	}//else if
 	
-	else if(!is_valid_command(argv[0])){
-		printf("%s: command not found\n",argv[0]);
-		return 1;	
-	}
-
-	//test the analysis
-	printf("\n==>the command is:%s with %d parameter(s):\n",argv[0],argc);
-	printf("0(command): %s\n",argv[0]);	
-	int j;	
-	for(j = 1;j < argc;j++){
-		printf("%d: %s\n",j,argv[j]);	
-	}//for
-	return 0;
+		//do cd	
+		printf("cdpath = %s \n",argv[1]);	
+		if((chdir(argv[1]))< 0){
+			printf("cd failed!\n");
+		}
+	}//else if cd
 }
 
 int is_valid_command(char *command){
@@ -206,11 +222,36 @@ int is_valid_command(char *command){
 
 	return FALSE;
 */
-	return TRUE;	
+//	if( !(strcmp(argv[0],"cd")) || !(strcmp(argv[0],"help")) || !(strcmp(argv[0],"exit")))
+//		return TRUE;
+//	else if()
+		return TRUE;
 }
 
 int do_command(){
-	
+	//do_command
+	printf("do commmand...\n");
+	char **argvtmp;
+	argvtmp = malloc(sizeof(char *)*argc+1);
+	int i;	
+	for(i = 0;i <= argc;i++){
+		argvtmp[i] = malloc(sizeof(char)*100);
+		if(i < argc)
+			strcpy(argvtmp[i],argv[i]);	
+	}//for
+	argvtmp[argc] = NULL;
+	printf("argvtmp====\n");
+	int j;	
+	for(j = 0;j <= argc;j++){
+		printf("%d: %s\n",j,argvtmp[j]);	
+	}//for
+
+	if(execvp(argv[0],argvtmp) < 0){
+		printf("execvp failed!\n");
+		return 1;	
+	}
+        free(argvtmp);
+	return 0;
 }
 
 void help(){
@@ -226,6 +267,12 @@ void help(){
 "\t\t             ||     ||\n",message);
 }
 
+void clean_argv(){
+	int i = 0;	
+	for(i = 0;i < argc;i++){
+		strcpy(argv[i],"\0");	
+	}
+}
 void init_lastdir(){
 	getcwd(lastdir, sizeof(lastdir));
 }
