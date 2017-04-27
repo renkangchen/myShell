@@ -2,7 +2,9 @@
 #include<stdlib.h>
 #include<unistd.h>
 #include<string.h>
+#include<dirent.h>
 #include<pwd.h>
+#include<wait.h>
 #include<sys/types.h>
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -14,12 +16,23 @@
 #define L_RED   "\e[1;31m"
 #define WHITE   "\e[0m"
 
-char lastdir[100];
+#define TRUE 1
+#define FALSE 0
 
-//print the prompt
+char lastdir[100];
+char command[BUFSIZ];
+char argv[100][100];
+int  argc;
+
+//set the prompt
 void set_prompt(char *prompt);
-//read the command that user input
-void read_command();
+//analysis the command that user input
+int analysis_command();
+int is_valid_command(char *command);
+int do_command();
+//print help information
+void help();
+
 void init_lastdir();
 void history_setup();
 void history_finish();
@@ -28,7 +41,6 @@ void display_history_list();
 int main(){
 	char prompt[BUFSIZ];
 	char *line;
-	char buf[BUFSIZ];
 	init_lastdir();
 	history_setup();	
 	while(1) {
@@ -38,9 +50,9 @@ int main(){
 		if(*line)
 			add_history(line);
 
-		strcpy(buf, line);
-		strcat(buf, "\n");
-		
+		strcpy(command, line);
+		//strcat(command, "\n");
+		analysis_command();
 		//todo deal with the buff
 
 	}
@@ -50,12 +62,12 @@ int main(){
 	return 0;
 }
 
-//print the prompt
+//set the prompt
 void set_prompt(char *prompt){
 	char hostname[100];
 	char cwd[100];
 	char super = '#';
-	//to cut the cwd	
+	//to cut the cwd by "/"	
 	char delims[] = "/";	
 	struct passwd* pwp;
 	
@@ -75,12 +87,12 @@ void set_prompt(char *prompt){
 	char *second = strtok(NULL,delims);
 	//if at home 
 	if(!(strcmp(first,"home")) && !(strcmp(second,pwp->pw_name))){
-		int shift = strlen(first) + strlen(second)+2;
+		int offset = strlen(first) + strlen(second)+2;
 		char newcwd[100];
 		char *p = cwd;
 		char *q = newcwd;
 
-		p += shift;
+		p += offset;
 		while(*(q++) = *(p++));
 		char tmp[100];
 		strcpy(tmp,"~");
@@ -95,8 +107,123 @@ void set_prompt(char *prompt){
 	sprintf(prompt, "\001\e[1;32m\002%s@%s\001\e[0m\002:\001\e[1;31m\002%s\001\e[0m\002%c",pwp->pw_name,hostname,cwd,super);	
 	
 }
-//read the command that user input
-void read_command(){
+
+//analysis command that user input
+int analysis_command(){    
+	int i = 1;
+	char *p;
+	//to cut the cwd by " "	
+	char delims[] = " ";
+	argc = 1;
+	struct passwd* pwp;
+	strcpy(argv[0],strtok(command,delims));
+	while(p = strtok(NULL,delims)){
+		strcpy(argv[i++],p);
+		argc++;
+	}//while
+	
+	//exit when command is exit	
+	if(strcmp(argv[0],"exit") == 0){
+		exit(EXIT_SUCCESS);
+	}
+	else if(strcmp(argv[0],"help") == 0){
+		help();
+	}//else if
+
+	else if(strcmp(argv[0],"cd") == 0){
+		char cd_path[100];
+		if((strlen(argv[1])) == 0 ){
+			pwp = getpwuid(getuid());
+			sprintf(cd_path,"/home/%s",pwp->pw_name);
+			strcpy(argv[1],cd_path);
+			argc++;			
+		}
+		else if( !(strcmp(argv[1],"~")) ){
+			pwp = getpwuid(getuid());
+			sprintf(cd_path,"/home/%s",pwp->pw_name);
+			strcpy(argv[1],cd_path);			
+		}
+
+		else if( !(strcmp(argv[1],"..")) ){
+			char cwdtmp[100];
+			//the parent dir of cwd
+			char parentdir[100];
+			char *p = cwdtmp;
+			char *q	= parentdir;		
+			getcwd(cwdtmp,sizeof(cwdtmp));
+			char *thisdir = strrchr(cwdtmp,'/');
+			int offset = strlen(cwdtmp) - strlen(thisdir);
+			while(offset--){
+				*(q++) = *(p++);				
+			}
+			*(q++) = '\0';
+			strcpy(argv[1],parentdir);		
+		}//else if	
+
+	}//else if
+	
+	else if(!is_valid_command(argv[0])){
+		printf("%s: command not found\n",argv[0]);
+		return 1;	
+	}
+
+	//test the analysis
+	printf("\n==>the command is:%s with %d parameter(s):\n",argv[0],argc);
+	printf("0(command): %s\n",argv[0]);	
+	int j;	
+	for(j = 1;j < argc;j++){
+		printf("%d: %s\n",j,argv[j]);	
+	}//for
+	return 0;
+}
+
+int is_valid_command(char *command){
+/*	
+	DIR *dir;
+	struct dirent *ptr;
+	//must have enough space
+	char tmp[BUFSIZ];
+	char *pathdir;
+	char *path = getenv("PATH");
+	strcpy(tmp,path);
+	//printf("\npath == %s\n",path);
+	pathdir = strtok(tmp,":");
+
+	while(pathdir){
+		dir = opendir(pathdir);
+		while((ptr = readdir(dir)) != NULL){
+		//	printf("d_name:%s\n",ptr->d_name);
+
+			if(strcmp(ptr->d_name,command) == 0){
+				closedir(dir);
+				return TRUE;
+			}//if		
+		}//while
+		closedir(dir);
+		//next pathdir 
+		pathdir =strtok(NULL,":");
+	}//while
+
+	return FALSE;
+*/
+	return TRUE;	
+}
+
+int do_command(){
+	
+}
+
+void help(){
+		char message[50] = "Hi,welcome to myShell!";
+		printf(
+"< %s >\n"
+"\t\t\\\n"
+"\t\t \\   \\_\\_    _/_/\n"
+"\t\t  \\      \\__/\n"
+"\t\t   \\     (oo)\\_______\n"
+"\t\t    \\    (__)\\       )\\/\\\n"
+"\t\t             ||----w |\n"
+"\t\t             ||     ||\n",message);
 }
 
 void init_lastdir(){
