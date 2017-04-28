@@ -1,2 +1,9 @@
 # myShell
-this is a C program which imitates the bash shell 
+This is a C program which imitates the bash shell 
+![](https://github.com/renkangchen/myShell/raw/master/myShellhelp.png)
+
+**make**,
+then you should have the **myShell**,
+use **./myShell** to run it.
+
+make sure you already have installed the [readline library](http://cnswww.cns.cwru.edu/php/chet/readline/rltop.html#Introduction).
