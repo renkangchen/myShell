@@ -18,22 +18,25 @@
 
 #define TRUE 1
 #define FALSE 0
+#define DEBUG
 
 char lastdir[100];
 char command[BUFSIZ];
 char argv[100][100];
+char **argvtmp1;
+char **argvtmp2;
 int  argc;
 int BUILTIN_COMMAND = 0;
+int PIPE_COMMAND = 0;
 //set the prompt
 void set_prompt(char *prompt);
 //analysis the command that user input
 int analysis_command();
 void builtin_command();
-int is_valid_command(char *command);
 int do_command();
 //print help information
 void help();
-void clean_argv();
+void initial();
 void init_lastdir();
 void history_setup();
 void history_finish();
@@ -58,22 +61,12 @@ int main(){
 			//todo deal with the buff
 			if(BUILTIN_COMMAND){
 				builtin_command();		
-			}
+			}//if
 			else{
-			int pid = fork();
-				if(pid == -1){
-					printf("fork failed!\n");		
-				}//if
-				else if(pid == 0){
-					do_command();		
-				}//else if 
-				else{
-					int pidReturn = wait(NULL);
-				}//else
-			}//else
+				do_command();
+			}//else		
 		}//if analysis_command
-		clean_argv();
-		BUILTIN_COMMAND = 0;
+		initial();//initial 
 	}//while
 	history_finish();
 	
@@ -143,20 +136,77 @@ int analysis_command(){
 	if(!(strcmp(argv[0],"exit"))||!(strcmp(argv[0],"help"))|| !(strcmp(argv[0],"cd"))){
 		BUILTIN_COMMAND = 1;	
 	}
-
-	if(!is_valid_command(argv[0])){
-		printf("%s: command not found\n",argv[0]);
-		return 1;	
+	int j;
+	int pipe_location;
+	for(j = 0;j < argc;j++){
+		if(strcmp(argv[j],"|") == 0){
+			PIPE_COMMAND = 1;
+			pipe_location = j;				
+			break;
+		}	
+	}//for
+	
+	if(PIPE_COMMAND){
+		//command 1
+		argvtmp1 = malloc(sizeof(char *)*pipe_location+1);
+		int i;	
+		for(i = 0;i < pipe_location+1;i++){
+			argvtmp1[i] = malloc(sizeof(char)*100);
+			if(i <= pipe_location)
+				strcpy(argvtmp1[i],argv[i]);	
+		}//for
+		argvtmp1[pipe_location] = NULL;
+		
+		//command 2
+		argvtmp2 = malloc(sizeof(char *)*(argc - pipe_location));
+		int j;	
+		for(j = 0;j < argc - pipe_location;j++){
+			argvtmp2[j] = malloc(sizeof(char)*100);
+			if(j <= pipe_location)
+				strcpy(argvtmp2[j],argv[pipe_location+1+j]);	
+		}//for
+		argvtmp2[argc - pipe_location - 1] = NULL;
+		
+	}//if pipe_command
+	else{
+		argvtmp1 = malloc(sizeof(char *)*argc+1);
+		int i;	
+		for(i = 0;i < argc+1;i++){
+			argvtmp1[i] = malloc(sizeof(char)*100);
+			if(i < argc)
+				strcpy(argvtmp1[i],argv[i]);	
+		}//for
+		argvtmp1[argc] = NULL;
 	}
+	
 
+#ifdef DEBUG
 	//test the analysis
 	printf("\n==>the command is:%s with %d parameter(s):\n",argv[0],argc);
 	printf("0(command): %s\n",argv[0]);	
-	int j;	
-	for(j = 1;j < argc;j++){
-		printf("%d: %s\n",j,argv[j]);	
+	int k;	
+	for(k = 1;k < argc;k++){
+		printf("%d: %s\n",k,argv[k]);	
 	}//for
-	printf("BUILTIN_COMMAND = %d\n",BUILTIN_COMMAND);
+			
+	if(BUILTIN_COMMAND){
+		printf("\tthis is a builtin command\n");
+	}
+	else if(PIPE_COMMAND){
+		printf("\tthis is a pipe command:\n");
+		printf("\t==command 1:\n");		
+		int k;	
+		for(k = 0;k < pipe_location + 1;k++){
+			printf("\t%d: %s\n",k,argvtmp1[k]);	
+		}//for
+		printf("\t==command 2:\n");
+			for(k = 0;k < argc - pipe_location;k++){
+			printf("\t%d: %s\n",k,argvtmp2[k]);	
+		}//for	
+	}
+			
+#endif	
+
 	return 0;
 }
 
@@ -164,7 +214,6 @@ void builtin_command(){
 	struct passwd* pwp;
 	//exit when command is exit	
 	if(strcmp(argv[0],"exit") == 0){
-		printf("exit====\n");
 		exit(EXIT_SUCCESS);
 	}
 	else if(strcmp(argv[0],"help") == 0){
@@ -179,78 +228,81 @@ void builtin_command(){
 			strcpy(argv[1],cd_path);
 			argc++;			
 		}
-		else if( !(strcmp(argv[1],"~")) ){
+		else if((strcmp(argv[1],"~") == 0) ){
 			pwp = getpwuid(getuid());
 			sprintf(cd_path,"/home/%s",pwp->pw_name);
 			strcpy(argv[1],cd_path);			
 		}
 	
-		//do cd	
+		//do cd
+#ifdef DEBUG	
 		printf("cdpath = %s \n",argv[1]);	
+#endif		
 		if((chdir(argv[1]))< 0){
-			printf("cd failed!\n");
+			printf("cd failed in builtin_command()\n");
 		}
 	}//else if cd
 }
 
-int is_valid_command(char *command){
-/*	
-	DIR *dir;
-	struct dirent *ptr;
-	//must have enough space
-	char tmp[BUFSIZ];
-	char *pathdir;
-	char *path = getenv("PATH");
-	strcpy(tmp,path);
-	//printf("\npath == %s\n",path);
-	pathdir = strtok(tmp,":");
-
-	while(pathdir){
-		dir = opendir(pathdir);
-		while((ptr = readdir(dir)) != NULL){
-		//	printf("d_name:%s\n",ptr->d_name);
-
-			if(strcmp(ptr->d_name,command) == 0){
-				closedir(dir);
-				return TRUE;
-			}//if		
-		}//while
-		closedir(dir);
-		//next pathdir 
-		pathdir =strtok(NULL,":");
-	}//while
-
-	return FALSE;
-*/
-//	if( !(strcmp(argv[0],"cd")) || !(strcmp(argv[0],"help")) || !(strcmp(argv[0],"exit")))
-//		return TRUE;
-//	else if()
-		return TRUE;
-}
-
 int do_command(){
 	//do_command
-	printf("do commmand...\n");
-	char **argvtmp;
-	argvtmp = malloc(sizeof(char *)*argc+1);
-	int i;	
-	for(i = 0;i <= argc;i++){
-		argvtmp[i] = malloc(sizeof(char)*100);
-		if(i < argc)
-			strcpy(argvtmp[i],argv[i]);	
-	}//for
-	argvtmp[argc] = NULL;
-	printf("argvtmp====\n");
-	int j;	
-	for(j = 0;j <= argc;j++){
-		printf("%d: %s\n",j,argvtmp[j]);	
-	}//for
+	
+	if(PIPE_COMMAND){
+		int fd[2],res;
+		res = pipe(fd);
+	
+		if(res == -1)
+			printf("pipe failed in do_command()\n");
+		pid_t pid = fork();
+		if(pid == -1){
+			printf("fork failed in do_command()\n");		
+		}//if
+		else if(pid == 0){
+			dup2(fd[1],1);//dup the stdout
+			close(fd[0]);//close the read edge
+			if(execvp(argvtmp1[0],argvtmp1) < 0){
+				#ifdef DEBUG
+				printf("execvp failed in do_command() !\n");
+				#endif
+				printf("%s:command not found\n",argvtmp1[0]);		
+				return 1;	
+			}//if		
+		}//else if 
+		else{
+			close(fd[1]);//close write edge
+			dup2(fd[0],0);//dup the stdin
+			if(execvp(argvtmp2[0],argvtmp2) < 0){
+				#ifdef DEBUG
+				printf("execvp failed in do_command() !\n");
+				#endif
+				printf("%s:command not found\n",argvtmp2[0]);		
+				return 1;	
+			}//if	
+			int pidReturn = wait(NULL);
+		}//else
+	}//if pipe command
 
-	if(execvp(argv[0],argvtmp) < 0){
-		printf("execvp failed!\n");
-		return 1;	
+	else{
+		pid_t pid = fork();	
+		if(pid == -1){
+			printf("fork failed in do_command()\n");		
+		}//if
+		else if(pid == 0){
+			if(execvp(argvtmp1[0],argvtmp1) < 0){
+				#ifdef DEBUG
+				printf("execvp failed in do_command() !\n");
+				#endif
+				printf("%s:command not found\n",argvtmp1[0]);		
+				return 1;	
+			}//if	
+		}//else if 
+		else{
+			int pidReturn = wait(NULL);	
+		}//else  
 	}
-        free(argvtmp);
+        free(argvtmp1);
+	free(argvtmp2);
+
 	return 0;
 }
 
@@ -267,15 +319,20 @@ void help(){
 "\t\t             ||     ||\n",message);
 }
 
-void clean_argv(){
+void initial(){
 	int i = 0;	
 	for(i = 0;i < argc;i++){
 		strcpy(argv[i],"\0");	
 	}
+	argc = 0;
+	BUILTIN_COMMAND = 0;
+	PIPE_COMMAND = 0;
 }
+
 void init_lastdir(){
 	getcwd(lastdir, sizeof(lastdir));
 }
+
 void history_setup(){
 	using_history();
 	stifle_history(50);
