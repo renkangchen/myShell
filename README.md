@@ -2,7 +2,7 @@
 
 ![](https://github.com/renkangchen/myShell/raw/master/myShellhelp.png)
 
-This is a C program which imitates the bash shell 
+This is a C program which imitates the bash shell. 
 
 **make**,
 then you should have the **myShell**,
