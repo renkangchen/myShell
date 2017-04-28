@@ -285,39 +285,50 @@ void do_command(){
 	
 	if(PIPE_COMMAND){
 		int fd[2],res;
+		int status;
+		
 		res = pipe(fd);
 	
 		if(res == -1)
 			printf("pipe failed in do_command()\n");
-		pid_t pid = fork();
-		if(pid == -1){
+		pid_t pid1 = fork();
+		if(pid1 == -1){
 			printf("fork failed in do_command()\n");		
 		}//if
-		else if(pid == 0){
-			close(fileno(stdin));
-			dup2(fd[1],fileno(stdout));//dup the stdout
-			close(fd[0]);//close the read edge
-			if(execvp(argvtmp1[0],argvtmp1) < 0){
-				#ifdef DEBUG
-				printf("execvp failed in do_command() !\n");
-				#endif
-				printf("%s:command not found\n",argvtmp1[0]);		
-			}//if		
-		}//else if 
+		else if(pid1 == 0){
+				dup2(fd[1],1);//dup the stdout
+				close(fd[0]);//close the read edge
+				if(execvp(argvtmp1[0],argvtmp1) < 0){
+					#ifdef DEBUG
+					printf("execvp failed in do_command() !\n");
+					#endif
+					printf("%s:command not found\n",argvtmp1[0]);		
+				}//if			
+		}//else if child pid1
 		else{
-			int pidReturn = wait(NULL);
-			close(fd[1]);//close write edge
-			close(fileno(stdout));
-			dup2(fd[0],fileno(stdin));//dup the stdin
-			if(execvp(argvtmp2[0],argvtmp2) < 0){
-				#ifdef DEBUG
-				printf("execvp failed in do_command() !\n");
-				#endif
-				printf("%s:command not found\n",argvtmp2[0]);		
-			}//if	
-			
-		}//else
+			waitpid(pid1,&status,0);
+			pid_t pid2 = fork();
+			if(pid2 == -1){
+				printf("fork failed in do_command()\n");		
+			}//if
+			else if(pid2 == 0){
+				close(fd[1]);//close write edge
+				dup2(fd[0],0);//dup the stdin
+				if(execvp(argvtmp2[0],argvtmp2) < 0){
+					#ifdef DEBUG
+					printf("execvp failed in do_command() !\n");
+					#endif
+					printf("%s:command not found\n",argvtmp2[0]);		
+				}//if
+			}//else if pid2 == 0
+			else{
+				close(fd[0]);
+				close(fd[1]);
+				waitpid(pid2,&status,0);
+			}//else 
+		}//else parent process
 	}//if pipe command
+
 	else if(REDIRECT_COMMAND){
 		pid_t pid = fork();	
 		if(pid == -1){
