@@ -25,15 +25,17 @@ char command[BUFSIZ];
 char argv[100][100];
 char **argvtmp1;
 char **argvtmp2;
+char argv_redirect[100];
 int  argc;
 int BUILTIN_COMMAND = 0;
 int PIPE_COMMAND = 0;
+int REDIRECT_COMMAND = 0;
 //set the prompt
 void set_prompt(char *prompt);
 //analysis the command that user input
 int analysis_command();
 void builtin_command();
-int do_command();
+void do_command();
 //print help information
 void help();
 void initial();
@@ -137,6 +139,7 @@ int analysis_command(){
 		BUILTIN_COMMAND = 1;	
 	}
 	int j;
+	//is a pipe command ?
 	int pipe_location;
 	for(j = 0;j < argc;j++){
 		if(strcmp(argv[j],"|") == 0){
@@ -146,11 +149,21 @@ int analysis_command(){
 		}	
 	}//for
 	
+	//is a redirect command ?
+	int redirect_location;
+	for(j = 0;j < argc;j++){
+		if(strcmp(argv[j],">") == 0){
+			REDIRECT_COMMAND = 1;
+			redirect_location = j;				
+			break;
+		}
+	}//for
+
 	if(PIPE_COMMAND){
 		//command 1
-		argvtmp1 = malloc(sizeof(char *)*pipe_location+1);
+		argvtmp1 = malloc(sizeof(char *)*pipe_location + 1);
 		int i;	
-		for(i = 0;i < pipe_location+1;i++){
+		for(i = 0;i < pipe_location + 1;i++){
 			argvtmp1[i] = malloc(sizeof(char)*100);
 			if(i <= pipe_location)
 				strcpy(argvtmp1[i],argv[i]);	
@@ -163,15 +176,28 @@ int analysis_command(){
 		for(j = 0;j < argc - pipe_location;j++){
 			argvtmp2[j] = malloc(sizeof(char)*100);
 			if(j <= pipe_location)
-				strcpy(argvtmp2[j],argv[pipe_location+1+j]);	
+				strcpy(argvtmp2[j],argv[pipe_location + 1 + j]);	
 		}//for
 		argvtmp2[argc - pipe_location - 1] = NULL;
 		
 	}//if pipe_command
+
+	else if(REDIRECT_COMMAND){
+		strcpy(argv_redirect,argv[redirect_location + 1]);
+		argvtmp1 = malloc(sizeof(char *)*redirect_location + 1);
+		int i;	
+		for(i = 0;i < redirect_location + 1;i++){
+			argvtmp1[i] = malloc(sizeof(char)*100);
+			if(i < redirect_location)
+				strcpy(argvtmp1[i],argv[i]);	
+		}//for
+		argvtmp1[redirect_location] = NULL;
+	}//redirect command
+
 	else{
 		argvtmp1 = malloc(sizeof(char *)*argc+1);
 		int i;	
-		for(i = 0;i < argc+1;i++){
+		for(i = 0;i < argc + 1;i++){
 			argvtmp1[i] = malloc(sizeof(char)*100);
 			if(i < argc)
 				strcpy(argvtmp1[i],argv[i]);	
@@ -181,16 +207,9 @@ int analysis_command(){
 	
 
 #ifdef DEBUG
-	//test the analysis
-	printf("\n==>the command is:%s with %d parameter(s):\n",argv[0],argc);
-	printf("0(command): %s\n",argv[0]);	
-	int k;	
-	for(k = 1;k < argc;k++){
-		printf("%d: %s\n",k,argv[k]);	
-	}//for
-			
+	//test the analysis		
 	if(BUILTIN_COMMAND){
-		printf("\tthis is a builtin command\n");
+		printf("\tthis is a builtin command: %s\n",argv[0]);
 	}
 	else if(PIPE_COMMAND){
 		printf("\tthis is a pipe command:\n");
@@ -203,6 +222,23 @@ int analysis_command(){
 			for(k = 0;k < argc - pipe_location;k++){
 			printf("\t%d: %s\n",k,argvtmp2[k]);	
 		}//for	
+	}
+	else if(REDIRECT_COMMAND){
+		printf("\tthis is a redirect command:\n");
+		printf("\t==command:\n");		
+		int k;	
+		for(k = 0;k < pipe_location + 1;k++){
+			printf("\t%d: %s\n",k,argvtmp1[k]);	
+		}//for
+		printf("redirect target: %s\n",argv_redirect);
+	}
+	else{
+		printf("\n\tthe command is:%s with %d parameter(s):\n",argv[0],argc);
+		printf("0(command): %s\n",argv[0]);	
+		int k;	
+		for(k = 1;k < argc;k++){
+			printf("%d: %s\n",k,argv[k]);	
+		}//for
 	}
 			
 #endif	
@@ -244,7 +280,7 @@ void builtin_command(){
 	}//else if cd
 }
 
-int do_command(){
+void do_command(){
 	//do_command
 	
 	if(PIPE_COMMAND){
@@ -258,30 +294,57 @@ int do_command(){
 			printf("fork failed in do_command()\n");		
 		}//if
 		else if(pid == 0){
-			dup2(fd[1],1);//dup the stdout
+			close(fileno(stdin));
+			dup2(fd[1],fileno(stdout));//dup the stdout
 			close(fd[0]);//close the read edge
 			if(execvp(argvtmp1[0],argvtmp1) < 0){
 				#ifdef DEBUG
 				printf("execvp failed in do_command() !\n");
 				#endif
 				printf("%s:command not found\n",argvtmp1[0]);		
-				return 1;	
 			}//if		
 		}//else if 
 		else{
+			int pidReturn = wait(NULL);
 			close(fd[1]);//close write edge
-			dup2(fd[0],0);//dup the stdin
+			close(fileno(stdout));
+			dup2(fd[0],fileno(stdin));//dup the stdin
 			if(execvp(argvtmp2[0],argvtmp2) < 0){
 				#ifdef DEBUG
 				printf("execvp failed in do_command() !\n");
 				#endif
 				printf("%s:command not found\n",argvtmp2[0]);		
-				return 1;	
 			}//if	
-			int pidReturn = wait(NULL);
+			
 		}//else
 	}//if pipe command
-
+	else if(REDIRECT_COMMAND){
+		pid_t pid = fork();	
+		if(pid == -1){
+			printf("fork failed in do_command()\n");		
+		}//if
+		else if(pid == 0){
+			int redirect_flag = 0;
+			FILE* fstream;
+			fstream = fopen(argv_redirect,"w+");
+			freopen(argv_redirect,"w",stdout);
+			if(execvp(argvtmp1[0],argvtmp1) < 0){
+				redirect_flag = 1;//execvp this redirect command failed		
+			}//if
+			fclose(stdout);
+			fclose(fstream);
+			if(redirect_flag){
+				#ifdef DEBUG
+				printf("execvp redirect command failed in do_command() !\n");
+				#endif
+				printf("%s:command not found\n",argvtmp1[0]);
+			}//redirect flag	
+				
+		}//else if 
+		else{
+			int pidReturn = wait(NULL);	
+		}//else  
+	}//else if redirect command 
 	else{
 		pid_t pid = fork();	
 		if(pid == -1){
@@ -292,18 +355,16 @@ int do_command(){
 				#ifdef DEBUG
 				printf("execvp failed in do_command() !\n");
 				#endif
-				printf("%s:command not found\n",argvtmp1[0]);		
-				return 1;	
+				printf("%s:command not found\n",argvtmp1[0]);			
 			}//if	
 		}//else if 
 		else{
 			int pidReturn = wait(NULL);	
 		}//else  
-	}
+	}//else normal command
+
         free(argvtmp1);
 	free(argvtmp2);
-
-	return 0;
 }
 
 void help(){
@@ -327,6 +388,7 @@ void initial(){
 	argc = 0;
 	BUILTIN_COMMAND = 0;
 	PIPE_COMMAND = 0;
+	REDIRECT_COMMAND = 0;
 }
 
 void init_lastdir(){
